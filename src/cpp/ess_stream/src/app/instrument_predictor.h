@@ -114,7 +114,7 @@ private:
   void initializeZeroMQ();
   void ensureInstrumentStates();
   void updateInstrumentState(int idx, bool hit, Real currentTime);
-  void generatePredictions(Real currentTime, bool forceEmit);
+  void generatePredictions(Real currentTime, const std::vector<int> &instrumentsWithHits);
   std::vector<PredictionHit> predictForInstrument(int idx, Real currentTime);
   Real computeConfidence(int idx);
   Real computeTimeUncertainty(int idx);

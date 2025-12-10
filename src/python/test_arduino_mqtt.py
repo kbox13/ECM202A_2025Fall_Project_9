@@ -30,22 +30,22 @@ except ImportError:
 
 class TimeSyncClient:
     """Time synchronization client using NTP"""
-    
-    def __init__(self, ntp_server: str = "pool.ntp.org"):
+
+    def __init__(self, ntp_server: str = "time.apple.com"):
         self.ntp_server = ntp_server
         self.ntp_client = None
         self.last_sync = None
         self.offset = 0
-        
+
         if NTP_AVAILABLE:
             self.ntp_client = ntplib.NTPClient()
             self.sync_time()
-    
+
     def sync_time(self) -> bool:
         """Sync with NTP server and calculate offset"""
         if not NTP_AVAILABLE or self.ntp_client is None:
             return False
-        
+
         try:
             response = self.ntp_client.request(self.ntp_server, version=3)
             ntp_time = response.tx_time
@@ -57,15 +57,15 @@ class TimeSyncClient:
         except Exception as e:
             print(f"NTP sync failed: {e}")
             return False
-    
+
     def get_synced_time(self) -> float:
         """Get current time synchronized with NTP"""
         if self.last_sync is None or (time.time() - self.last_sync) > 3600:
             # Re-sync if never synced or more than 1 hour old
             self.sync_time()
-        
+
         return time.time() + self.offset
-    
+
     def get_unix_timestamp_micros(self) -> Tuple[int, int]:
         """
         Get Unix timestamp with microsecond precision
@@ -81,49 +81,49 @@ class TimeSyncClient:
 
 class ArduinoEventPublisher:
     """Publisher for Arduino event scheduler"""
-    
-    def __init__(self, broker_host: str = "172.20.10.5", broker_port: int = 1883):
+
+    def __init__(self, broker_host: str = "172.20.10.2", broker_port: int = 1883):
         self.broker_host = broker_host
         self.broker_port = broker_port
         self.client = None
         self.connected = False
         self.time_sync = TimeSyncClient()
-        
+
     def connect(self) -> bool:
         """Connect to MQTT broker"""
         try:
             self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
             self.client.on_connect = self._on_connect
             self.client.on_disconnect = self._on_disconnect
-            
+
             print(f"Connecting to MQTT broker at {self.broker_host}:{self.broker_port}...")
             self.client.connect(self.broker_host, self.broker_port, 60)
             self.client.loop_start()
-            
+
             # Wait for connection
             timeout = 5
             start = time.time()
             while not self.connected and (time.time() - start) < timeout:
                 time.sleep(0.1)
-            
+
             if self.connected:
                 print("Connected to MQTT broker")
                 return True
             else:
                 print("Failed to connect to MQTT broker")
                 return False
-                
+
         except Exception as e:
             print(f"Error connecting to MQTT broker: {e}")
             return False
-    
+
     def disconnect(self):
         """Disconnect from MQTT broker"""
         if self.client:
             self.client.loop_stop()
             self.client.disconnect()
             print("Disconnected from MQTT broker")
-    
+
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         """MQTT connection callback"""
         if reason_code == 0:
@@ -131,13 +131,13 @@ class ArduinoEventPublisher:
             print("MQTT connection successful")
         else:
             print(f"MQTT connection failed with code {reason_code}")
-    
+
     def _on_disconnect(self, client, userdata, reason_code, properties=None, *args, **kwargs):
         """MQTT disconnection callback"""
         self.connected = False
         if reason_code != 0:
             print(f"Unexpected MQTT disconnection (rc={reason_code})")
-    
+
     def publish_event(self, unix_time: int, microseconds: int, 
                      r: int, g: int, b: int, event_id: Optional[int] = None) -> bool:
         """
@@ -155,10 +155,10 @@ class ArduinoEventPublisher:
         if not self.connected:
             print("ERROR: Not connected to MQTT broker")
             return False
-        
+
         if event_id is None:
             event_id = int(time.time() * 1000)  # Use timestamp as ID
-        
+
         payload = {
             "unix_time": int(unix_time),
             "microseconds": int(microseconds),
@@ -167,11 +167,11 @@ class ArduinoEventPublisher:
             "b": int(1 if b else 0),
             "event_id": int(event_id)
         }
-        
+
         topic = "beat/events/schedule"
         json_payload = json.dumps(payload)
         result = self.client.publish(topic, json_payload, qos=1)
-        
+
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             print(f"Published event: ID={event_id}, RGB=({r},{g},{b}), "
                   f"time={unix_time}.{microseconds:06d}")
@@ -180,7 +180,7 @@ class ArduinoEventPublisher:
         else:
             print(f"Failed to publish event: {result.rc}")
             return False
-    
+
     def publish_batch_events(self, events: List[Dict]) -> bool:
         """
         Publish multiple events in batch
@@ -194,46 +194,46 @@ class ArduinoEventPublisher:
         if not self.connected:
             print("ERROR: Not connected to MQTT broker")
             return False
-        
+
         payload = {
             "events": events,
             "batch_id": int(time.time() * 1000)
         }
-        
+
         topic = "beat/events/schedule"
         result = self.client.publish(topic, json.dumps(payload), qos=1)
-        
+
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             print(f"Published batch: {len(events)} events")
             return True
         else:
             print(f"Failed to publish batch: {result.rc}")
             return False
-    
+
     def publish_time_sync(self) -> bool:
         """Publish time synchronization message"""
         if not self.connected:
             print("ERROR: Not connected to MQTT broker")
             return False
-        
+
         seconds, micros = self.time_sync.get_unix_timestamp_micros()
-        
+
         payload = {
             "unix_time": seconds,
             "microseconds": micros,
             "sync_source": "host"
         }
-        
+
         topic = "beat/time/sync"
         result = self.client.publish(topic, json.dumps(payload), qos=1)
-        
+
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             print(f"Published time sync: {seconds}.{micros:06d}")
             return True
         else:
             print(f"Failed to publish time sync: {result.rc}")
             return False
-    
+
     def schedule_event_relative(self, delay_seconds: float, r: int, g: int, b: int,
                                event_id: Optional[int] = None) -> bool:
         """
@@ -248,29 +248,32 @@ class ArduinoEventPublisher:
             True if scheduled successfully
         """
         seconds, micros = self.time_sync.get_unix_timestamp_micros()
-        
+
         # Calculate future time
         future_total = seconds + micros / 1000000.0 + delay_seconds
         future_seconds = int(future_total)
         future_micros = int((future_total - future_seconds) * 1000000)
-        
+
         return self.publish_event(future_seconds, future_micros, r, g, b, event_id)
 
 
 def test_basic_events(publisher: ArduinoEventPublisher):
     """Test basic single event scheduling"""
     print("\n=== Test 1: Basic Single Event ===")
-    
+
+    seconds, micros = publisher.time_sync.get_unix_timestamp_micros()
+
     # Schedule event 2 seconds in future
-    publisher.schedule_event_relative(2.0, r=1, g=0, b=0, event_id=1001)
+    publisher.publish_event(seconds + 2, micros, r=1, g=0, b=0, event_id=1001)
     time.sleep(0.5)
-    
+
     # Schedule another event 4 seconds in future
-    publisher.schedule_event_relative(4.0, r=0, g=1, b=0, event_id=1002)
+    publisher.publish_event(seconds + 4, micros, r=0, g=1, b=0, event_id=1002)
     time.sleep(0.5)
-    
+
     # Schedule event 6 seconds in future
-    publisher.schedule_event_relative(6.0, r=0, g=0, b=1, event_id=1003)
+    publisher.publish_event(seconds + 6, micros, r=0, g=0, b=1, event_id=1003)
+    time.sleep(0.5)
 
 
 def test_batch_events(publisher: ArduinoEventPublisher):
@@ -366,35 +369,38 @@ def test_color_combinations(publisher: ArduinoEventPublisher):
 
 def main():
     parser = argparse.ArgumentParser(description="Test Arduino MQTT Event Scheduler")
-    parser.add_argument("--broker", default="172.20.10.5",
-                       help="MQTT broker hostname (default: localhost)")
+    parser.add_argument(
+        "--broker",
+        default="172.20.10.2",
+        help="MQTT broker hostname (default: localhost)",
+    )
     parser.add_argument("--port", type=int, default=1883,
                        help="MQTT broker port (default: 1883)")
     parser.add_argument("--test", choices=["all", "basic", "batch", "sync", "rapid", "colors"],
                        default="all", help="Which test to run (default: all)")
-    
+
     args = parser.parse_args()
-    
+
     print("=" * 60)
     print("Arduino Event Scheduler Test Script")
     print("=" * 60)
-    
+
     # Create publisher
     publisher = ArduinoEventPublisher(args.broker, args.port)
-    
+
     # Connect to broker
     if not publisher.connect():
         print("ERROR: Failed to connect to MQTT broker")
         print("Make sure Mosquitto is running:")
         print("  mosquitto -c /usr/local/etc/mosquitto/mosquitto.conf")
         sys.exit(1)
-    
+
     try:
         # Send time sync first
         print("\nSending time synchronization...")
         publisher.publish_time_sync()
         time.sleep(1)
-        
+
         # Run selected tests
         if args.test == "all":
             test_basic_events(publisher)
@@ -416,15 +422,15 @@ def main():
             test_rapid_events(publisher)
         elif args.test == "colors":
             test_color_combinations(publisher)
-        
+
         print("\n" + "=" * 60)
         print("Tests completed!")
         print("Watch the Arduino Serial Monitor to see event execution")
         print("=" * 60)
-        
+
         # Keep connection alive for a bit
         time.sleep(2)
-        
+
     except KeyboardInterrupt:
         print("\nInterrupted by user")
     finally:
@@ -433,4 +439,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

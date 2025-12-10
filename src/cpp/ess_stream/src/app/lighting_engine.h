@@ -42,7 +42,7 @@ public:
   void declareParameters() {
     declareParameter("confidence_threshold", "Minimum confidence to send", "[0,1]", 0.3);
     declareParameter("max_latency_sec", "Maximum prediction latency", "[0.1,10.0]", 2.0);
-    declareParameter("min_latency_sec", "Minimum prediction latency", "[0.01,1.0]", 0.05);
+    declareParameter("min_latency_sec", "Minimum prediction latency", "[0.01,2.0]", 0.05);
     declareParameter("duplicate_window_sec", "Time window for duplicate detection", "[0.01,1.0]", 0.1);
   }
 

@@ -1,5 +1,6 @@
 #include "mqtt_publisher.h"
 #include "prediction_types.h"
+#include "mqtt_command_logger.h"
 #include <mqtt/async_client.h>
 #include <mqtt/connect_options.h>
 #include <mqtt/message.h>
@@ -26,6 +27,7 @@ MQTTPublisher::MQTTPublisher() : Algorithm() {
   _mqttConnected = false;
   _timeInitialized = false;
   _startTimeSec = 0.0;
+  _commandLogger = nullptr;
 }
 
 MQTTPublisher::~MQTTPublisher() {
@@ -46,28 +48,32 @@ void MQTTPublisher::configure() {
 void MQTTPublisher::reset() {
   Algorithm::reset();
   _timeInitialized = false;
-  
-  initializeTime();
+
   initializeMQTT();
 }
 
-void MQTTPublisher::initializeTime() {
-  struct timeval tv;
-  if (gettimeofday(&tv, nullptr) == 0) {
-    _startUnixTime = tv.tv_sec;
-    _startMicroseconds = tv.tv_usec;
-    _startTimeSec = static_cast<Real>(tv.tv_sec) + static_cast<Real>(tv.tv_usec) / 1000000.0;
-    _timeInitialized = true;
-    std::cout << "MQTTPublisher: Time initialized - Unix time: " << _startUnixTime 
-              << ", microseconds: " << _startMicroseconds << std::endl;
-  } else {
-    std::cerr << "MQTTPublisher: Failed to get system time" << std::endl;
-    _timeInitialized = false;
-  }
+void MQTTPublisher::set_logger(::MQTTCommandLogger *logger)
+{
+  _commandLogger = logger;
 }
 
-void MQTTPublisher::initializeMQTT() {
-  try {
+void MQTTPublisher::setStartTime(time_t unix_sec, long microseconds)
+{
+  _startUnixTime = unix_sec;
+  _startMicroseconds = microseconds;
+  _startTimeSec = static_cast<Real>(unix_sec) + static_cast<Real>(microseconds) / 1000000.0;
+  _timeInitialized = true;
+
+  std::cout << "MQTTPublisher: Pipeline start time set - "
+            << "Unix time: " << _startUnixTime
+            << ", microseconds: " << _startMicroseconds
+            << " (from chrony NTP server)" << std::endl;
+}
+
+void MQTTPublisher::initializeMQTT()
+{
+  try
+  {
     // Create broker URI
     std::ostringstream uri;
     uri << "tcp://" << _brokerHost << ":" << _brokerPort;
@@ -85,11 +91,14 @@ void MQTTPublisher::initializeMQTT() {
     _mqttClient->connect(*_connOpts)->wait();
     _mqttConnected = true;
     std::cout << "MQTTPublisher: Connected to MQTT broker" << std::endl;
-    
-  } catch (const mqtt::exception& e) {
+  }
+  catch (const mqtt::exception &e)
+  {
     std::cerr << "MQTTPublisher: MQTT connection error: " << e.what() << std::endl;
     _mqttConnected = false;
-  } catch (const std::exception& e) {
+  }
+  catch (const std::exception &e)
+  {
     std::cerr << "MQTTPublisher: Error initializing MQTT: " << e.what() << std::endl;
     _mqttConnected = false;
   }
@@ -135,18 +144,10 @@ AlgorithmStatus MQTTPublisher::process() {
 
 
 void MQTTPublisher::convertToUnixTime(const LightingCommand& cmd, time_t& unixTime, long& microseconds) {
-  if (!_timeInitialized) {
-    // Fallback: use current time
-    struct timeval tv;
-    gettimeofday(&tv, nullptr);
-    unixTime = tv.tv_sec;
-    microseconds = tv.tv_usec;
-    return;
-  }
-  
+  // Time should always be initialized via setStartTime() before processing starts
   // The predictor's t_pred_sec is relative to when processing started (in seconds since start)
-  // We need to add it to the Unix time when processing started to get absolute Unix time
-  
+  // We add it to the Unix time when processing started to get absolute Unix time
+
   // Split cmd.tPredSec into integer seconds and fractional microseconds
   // This avoids floating point precision issues with large Unix timestamps
   Real tPredSec = cmd.tPredSec;
@@ -217,6 +218,46 @@ void MQTTPublisher::publishSingleCommand(const LightingCommand& cmd) {
   }
   
   try {
+    // Time should already be initialized via setStartTime() before processing starts
+    if (!_timeInitialized)
+    {
+
+      time_t pipelineStartUnixTime;
+      long pipelineStartMicroseconds;
+
+      if (NTPTimeClient::getTimeFromChrony(pipelineStartUnixTime, pipelineStartMicroseconds))
+      {
+        std::cerr << "Pipeline start time from chrony: " << pipelineStartUnixTime
+                  << "." << pipelineStartMicroseconds << std::endl;
+      }
+      else
+      {
+        // Fallback to system time if chrony unavailable
+        NTPTimeClient::getSystemTime(pipelineStartUnixTime, pipelineStartMicroseconds);
+        std::cerr << "Pipeline start time from system (chrony unavailable): "
+                  << pipelineStartUnixTime << "." << pipelineStartMicroseconds << std::endl;
+      }
+
+      // Pass start time to MQTTPublisher for accurate audio time to Unix time mapping
+      // Get the predicted time (tpredsec) from LightingCommand and adjust start time accordingly
+      // This makes the mapping from 'audio time' to Unix wall time accurate
+      // tpredsec is expected to be in seconds (float/double)
+      time_t predSeconds = static_cast<time_t>(std::floor(cmd.tPredSec));
+      Real fractionalSec = cmd.tPredSec - static_cast<Real>(predSeconds);
+      long predMicroseconds = static_cast<long>(std::round(fractionalSec * 1000000.0));
+
+      _startUnixTime = pipelineStartUnixTime - predSeconds;
+      _startMicroseconds = pipelineStartMicroseconds - predMicroseconds;
+      if (_startMicroseconds < 0)
+      {
+        time_t borrowSeconds = (_startMicroseconds - 999999) / 1000000; // Negative division
+        _startUnixTime += borrowSeconds;
+        _startMicroseconds = _startMicroseconds - (borrowSeconds * 1000000);
+      }
+
+      setStartTime(_startUnixTime, _startMicroseconds);
+    }
+
     time_t unixTime;
     long microseconds;
     convertToUnixTime(cmd, unixTime, microseconds);
@@ -230,7 +271,13 @@ void MQTTPublisher::publishSingleCommand(const LightingCommand& cmd) {
     // Publish (truly async, non-blocking - fire and forget)
     // Don't wait for completion to avoid blocking the pipeline
     _mqttClient->publish(msg);
-    
+
+    // Log command if logger is set
+    if (_commandLogger)
+    {
+      _commandLogger->log_command(cmd);
+    }
+
     // Reduced console output - only log occasionally to avoid blocking
     // Commented out for performance - uncomment for debugging
     // std::cout << "MQTTPublisher: Published event - ID=" << cmd.eventId 

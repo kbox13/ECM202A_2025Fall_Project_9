@@ -38,6 +38,7 @@
 #include "gate_logger_sink.h"
 #include "lighting_engine.h"
 #include "mqtt_publisher.h"
+#include "mqtt_command_logger.h"
 
 using namespace std;
 using namespace essentia;
@@ -181,11 +182,14 @@ int main(int argc, char *argv[])
   HitPredictionLogger logger(sampleRate, hopSize, "logs");
   streaming::GateLoggerSink::register_logger(&logger); // Register for gate loggers to access
 
+  // Create logger instance for MQTT commands
+  MQTTCommandLogger mqttCommandLogger("logs");
+
   // Pool to collect features
   Pool pool;
 
   // ---------- Build Essentia streaming graph ----------
-  AlgorithmFactory& F = streaming::AlgorithmFactory::instance();
+  AlgorithmFactory &F = streaming::AlgorithmFactory::instance();
 
   // Manually register RingBufferInput since it's not in the factory
   AlgorithmFactory::Registrar<streaming::RingBufferInput> regRingBufferInput;
@@ -210,13 +214,13 @@ int main(int argc, char *argv[])
   AlgorithmFactory::Registrar<streaming::MQTTPublisher> regMQTTPublisher;
 
   // Create algorithms
-  Algorithm* fc   = F.create("FrameCutter",
-                             "frameSize", frameSize,
-                             "hopSize",   hopSize,
-                             "silentFrames", "noise");
+  Algorithm *fc = F.create("FrameCutter",
+                           "frameSize", frameSize,
+                           "hopSize", hopSize,
+                           "silentFrames", "noise");
 
-  Algorithm* win  = F.create("Windowing", "type", "blackmanharris62");
-  Algorithm* spec = F.create("Spectrum");
+  Algorithm *win = F.create("Windowing", "type", "blackmanharris62");
+  Algorithm *spec = F.create("Spectrum");
   Algorithm *melbands = F.create("MelBands",
                                  "numberBands", 64,
                                  "sampleRate", sampleRate);
@@ -257,12 +261,12 @@ int main(int argc, char *argv[])
                                            "threshold_mode", "above");
 
   // Create RingBufferInput for real-time streaming
-  Algorithm* src = F.create("RingBufferInput", "bufferSize", frameSize * 10);
+  Algorithm *src = F.create("RingBufferInput", "bufferSize", frameSize * 10);
 
   // Wire the pipeline: src -> fc -> win -> spec -> mfcc -> pool
-  src->output("signal")    >> fc->input("signal");
-  fc->output("frame")      >> win->input("frame");
-  win->output("frame")     >> spec->input("frame");
+  src->output("signal") >> fc->input("signal");
+  fc->output("frame") >> win->input("frame");
+  win->output("frame") >> spec->input("frame");
   spec->output("spectrum") >> melbands->input("spectrum");
   // Instrument aggregation from mel bands
   melbands->output("bands") >> instr->input("in");
@@ -349,17 +353,17 @@ int main(int argc, char *argv[])
 
   // Create gate logger sinks for logging hits to file
   Algorithm *kick_gate_logger = F.create("GateLoggerSink", "instrument_index", 0);
-  Algorithm *snare_gate_logger = F.create("GateLoggerSink", "instrument_index", 1);
-  Algorithm *clap_gate_logger = F.create("GateLoggerSink", "instrument_index", 2);
-  Algorithm *chat_gate_logger = F.create("GateLoggerSink", "instrument_index", 3);
-  Algorithm *ohc_gate_logger = F.create("GateLoggerSink", "instrument_index", 4);
+  // Algorithm *snare_gate_logger = F.create("GateLoggerSink", "instrument_index", 1);
+  // Algorithm *clap_gate_logger = F.create("GateLoggerSink", "instrument_index", 2);
+  // Algorithm *chat_gate_logger = F.create("GateLoggerSink", "instrument_index", 3);
+  // Algorithm *ohc_gate_logger = F.create("GateLoggerSink", "instrument_index", 4);
 
   // Wire gates to loggers (parallel to existing connections)
   kick_gate->output("out") >> kick_gate_logger->input("in");
-  snare_gate->output("out") >> snare_gate_logger->input("in");
-  clap_gate->output("out") >> clap_gate_logger->input("in");
-  chat_gate->output("out") >> chat_gate_logger->input("in");
-  ohc_gate->output("out") >> ohc_gate_logger->input("in");
+  // snare_gate->output("out") >> snare_gate_logger->input("in");
+  // clap_gate->output("out") >> clap_gate_logger->input("in");
+  // chat_gate->output("out") >> chat_gate_logger->input("in");
+  // ohc_gate->output("out") >> ohc_gate_logger->input("in");
 
   // Pack 5 gates into a single vector and publish once
   Algorithm *gate_pack = F.create("VectorPack5");
@@ -378,7 +382,7 @@ int main(int argc, char *argv[])
                                   "min_bpm", 60,
                                   "max_bpm", 200,
                                   "horizon_seconds", 2.0,
-                                  "max_predictions_per_instrument", 2,
+                                  "max_predictions_per_instrument", 3,
                                   "confidence_threshold_min", 0.3,
                                   "periodic_interval_sec", 0.15);
   gate_pack->output("out") >> predictor->input("in");
@@ -389,12 +393,12 @@ int main(int argc, char *argv[])
 
   // Create lighting engine and MQTT publisher for embedded device
   Algorithm *lighting_engine = F.create("LightingEngine",
-                                        "confidence_threshold", 0.70,
+                                        "confidence_threshold", 0.7,
                                         "max_latency_sec", 2.0,
-                                        "min_latency_sec", 0.07,
+                                        "min_latency_sec", .7,
                                         "duplicate_window_sec", 0.4);
   Algorithm *mqtt_publisher = F.create("MQTTPublisher",
-                                       "broker_host", "172.20.10.5",
+                                       "broker_host", "0.0.0.0",
                                        "broker_port", 1883,
                                        "topic", "beat/events/schedule",
                                        "client_id", "essentia_lighting",
@@ -407,6 +411,9 @@ int main(int argc, char *argv[])
   // Connect lighting engine output to MQTT publisher
   lighting_engine->output("out") >> mqtt_publisher->input("in");
 
+  // Set logger for MQTT publisher to log commands
+  static_cast<streaming::MQTTPublisher *>(mqtt_publisher)->set_logger(&mqttCommandLogger);
+
   // Note: predictor publishes to ZMQ directly, no zmq output connection needed but needed to run graph
 
   // Create network
@@ -416,38 +423,41 @@ int main(int argc, char *argv[])
   ensurePa(Pa_Initialize(), "Pa_Initialize");
 
   int dev = findBlackHoleDevice();
-  if (dev == paNoDevice) {
+  if (dev == paNoDevice)
+  {
     cerr << "Could not find a 'BlackHole' input device. Is BlackHole installed and enabled?\n";
-    cerr << "Tip: Install BlackHole and/or select it as a capture source. " 
+    cerr << "Tip: Install BlackHole and/or select it as a capture source. "
          << "You can also print devices here by iterating Pa_GetDeviceInfo().\n";
     return 2;
   }
 
   PaStreamParameters inParams{};
   inParams.device = dev;
-  inParams.channelCount = 1;             // mono into MFCC pipeline
-  inParams.sampleFormat = paFloat32;     // Essentia uses float (Real)
+  inParams.channelCount = 1;         // mono into MFCC pipeline
+  inParams.sampleFormat = paFloat32; // Essentia uses float (Real)
   inParams.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowInputLatency;
   inParams.hostApiSpecificStreamInfo = nullptr;
 
   // Shared ring between PortAudio callback and Essentia source
   Ring ring(44100 * 5); // ~5 seconds buffer safety
 
-  PaStream* stream = nullptr;
+  PaStream *stream = nullptr;
   ensurePa(Pa_OpenStream(&stream,
-                         &inParams,            // input
-                         nullptr,              // no output
+                         &inParams, // input
+                         nullptr,   // no output
                          (double)sampleRate,
                          (unsigned long)hopSize, // callback chunk ~ hop
                          paNoFlag,
                          &paCallback,
-                         &ring), "Pa_OpenStream");
+                         &ring),
+           "Pa_OpenStream");
 
   ensurePa(Pa_StartStream(stream), "Pa_StartStream");
 
   // ---------- Real-time streaming: Feed data from Ring to RingBufferInput ----------
   // This enables concurrent processing as data comes in from BlackHole
-  std::thread feeder([&](){
+  std::thread feeder([&]()
+                     {
     std::vector<float> chunk(hopSize);
     int noDataCount = 0;
     int framesProcessed = 0;
@@ -477,11 +487,11 @@ int main(int argc, char *argv[])
         static_cast<streaming::RingBufferInput*>(src)->add(chunk.data(), hopSize);
       }
     }
-    cerr << "Feeder thread stopping... processed " << framesProcessed << " frames" << endl;
-  });
+    cerr << "Feeder thread stopping... processed " << framesProcessed << " frames" << endl; });
 
   // Graceful stop on Ctrl+C
-  std::signal(SIGINT, [](int){ g_running = false; });
+  std::signal(SIGINT, [](int)
+              { g_running = false; });
 
   cerr << "Streaming from BlackHole… processing audio in real-time..." << endl;
   cerr << "Timeout set to " << timeoutSeconds << " seconds (Ctrl+C to stop early)" << endl;
@@ -559,16 +569,16 @@ int main(int argc, char *argv[])
 
   // Store instrument sums and gates
   aggrPool.merge("instrument.kick.sum.frames", pool.value<vector<Real>>("instrument.kick.sum"));
-  aggrPool.merge("instrument.snare.sum.frames", pool.value<vector<Real>>("instrument.snare.sum"));
-  aggrPool.merge("instrument.clap.sum.frames", pool.value<vector<Real>>("instrument.clap.sum"));
-  aggrPool.merge("instrument.chat.sum.frames", pool.value<vector<Real>>("instrument.chat.sum"));
-  aggrPool.merge("instrument.ohc.sum.frames", pool.value<vector<Real>>("instrument.ohc.sum"));
+  // aggrPool.merge("instrument.snare.sum.frames", pool.value<vector<Real>>("instrument.snare.sum"));
+  // aggrPool.merge("instrument.clap.sum.frames", pool.value<vector<Real>>("instrument.clap.sum"));
+  // aggrPool.merge("instrument.chat.sum.frames", pool.value<vector<Real>>("instrument.chat.sum"));
+  // aggrPool.merge("instrument.ohc.sum.frames", pool.value<vector<Real>>("instrument.ohc.sum"));
 
   aggrPool.merge("gate.kick.frames", pool.value<vector<Real>>("gate.kick"));
-  aggrPool.merge("gate.snare.frames", pool.value<vector<Real>>("gate.snare"));
-  aggrPool.merge("gate.clap.frames", pool.value<vector<Real>>("gate.clap"));
-  aggrPool.merge("gate.chat.frames", pool.value<vector<Real>>("gate.chat"));
-  aggrPool.merge("gate.ohc.frames", pool.value<vector<Real>>("gate.ohc"));
+  // aggrPool.merge("gate.snare.frames", pool.value<vector<Real>>("gate.snare"));
+  // aggrPool.merge("gate.clap.frames", pool.value<vector<Real>>("gate.clap"));
+  // aggrPool.merge("gate.chat.frames", pool.value<vector<Real>>("gate.chat"));
+  // aggrPool.merge("gate.ohc.frames", pool.value<vector<Real>>("gate.ohc"));
 
   standard::Algorithm* output = standard::AlgorithmFactory::create("YamlOutput",
                                   "filename", outputFilename);

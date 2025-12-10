@@ -132,17 +132,24 @@ bool LightingEngine::shouldSendCommand(const LightingCommand& cmd, const std::st
   if (latency < _minLatencySec || latency > _maxLatencySec) {
     return false;
   }
-  
-  // Check for duplicates using the provided eventId
-  auto it = _sentEvents.find(eventId);
-  if (it != _sentEvents.end()) {
-    // Check if prediction time hasn't passed yet (or just passed within window)
-    Real timeDiff = cmd.tPredSec - it->second.tPredSec;
-    if (timeDiff < _duplicateWindowSec) {
-      return false; // Duplicate detected
+
+  // Check for duplicates by iterating through all sent events
+  // Check if any event with the same instrument is within the duplicate window
+  std::string instrumentPrefix = cmd.instrument + "_";
+  for (const auto &pair : _sentEvents)
+  {
+    // Check if this event is for the same instrument (eventId format: "instrument_time")
+    if (pair.first.find(instrumentPrefix) == 0)
+    {
+      // Check if absolute time difference is within duplicate window
+      Real timeDiff = std::abs(cmd.tPredSec - pair.second.tPredSec);
+      if (timeDiff < _duplicateWindowSec)
+      {
+        return false; // Duplicate detected
+      }
     }
   }
-  
+
   return true;
 }
 

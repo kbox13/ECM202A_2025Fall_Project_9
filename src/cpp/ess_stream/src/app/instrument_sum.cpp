@@ -124,7 +124,7 @@ void InstrumentSum::buildDefaultMasks(size_t numBands,
   // Kick: Focused on fundamental sub-bass (40-75 Hz) and narrow click (3-4k Hz)
   // Removed 110-180 Hz range to avoid bass/snare overlap
   // Narrowed high freq to 3-4k to avoid snare attack overlap (snare is 2-5k)
-  addInstrument(0, { {40.0f, 75.0f, 0.75f} });
+  addInstrument(0, {{40.0f, 75.0f, 1.0f}});
 
   // Snare: 180–280 (0.35), 350–600 (0.10), 2–5k (0.35), 6–10k (0.20)
   addInstrument(1, { {180.0f, 280.0f, 0.35f}, {350.0f, 600.0f, 0.10f}, {2000.0f, 5000.0f, 0.35f}, {6000.0f, 10000.0f, 0.20f} });

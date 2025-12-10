@@ -65,6 +65,8 @@ add_executable(ess_stream
   src/app/gate_logger_sink.cpp
   src/app/lighting_engine.cpp
   src/app/mqtt_publisher.cpp
+  src/app/mqtt_command_logger.cpp
+  src/app/ntp_time_client.cpp
 )
 
 target_include_directories(ess_stream PRIVATE
@@ -96,5 +98,28 @@ target_compile_definitions(ess_stream PRIVATE
 )
 
 message(STATUS "Using Essentia from: ${ESSENTIA_PREFIX}")
+
+# Test executable for Arduino latency and time sync testing
+add_executable(test_arduino_latency_sync
+  src/app/test_arduino_latency_sync.cpp
+  src/app/ntp_time_client.cpp
+)
+
+target_include_directories(test_arduino_latency_sync PRIVATE
+  ${ESSENTIA_INCLUDE_DIRS}
+  ${ESSENTIA_ROOT}/include
+  /opt/homebrew/include
+)
+
+target_link_libraries(test_arduino_latency_sync PRIVATE
+  ${PAHO_MQTT_CPP_LIB}
+  ${PAHO_MQTT_C_LIB}
+)
+
+# Set rpath to find MQTT libraries at runtime
+set_target_properties(test_arduino_latency_sync PROPERTIES
+  BUILD_RPATH "/opt/homebrew/lib"
+  INSTALL_RPATH "/opt/homebrew/lib"
+)
 
 

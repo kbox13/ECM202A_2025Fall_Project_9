@@ -27,12 +27,13 @@ AlgorithmStatus VectorPack5::process() {
   if (status != OK) return status;
 
   // For Sink<Real>, tokens() returns std::vector<Real>&
+  // note all other inputs are set to 0.0f due to not wanting to predict non implemented instruments
   const std::vector<Real>& v0 = _in0.tokens();
-  const std::vector<Real>& v1 = _in1.tokens();
-  const std::vector<Real>& v2 = _in2.tokens();
-  const std::vector<Real>& v3 = _in3.tokens();
-  const std::vector<Real>& v4 = _in4.tokens();
-  
+  const std::vector<Real> &v1 = std::vector<Real>(1, 0.0f);
+  const std::vector<Real> &v2 = std::vector<Real>(1, 0.0f);
+  const std::vector<Real> &v3 = std::vector<Real>(1, 0.0f);
+  const std::vector<Real> &v4 = std::vector<Real>(1, 0.0f);
+
   // For Source<std::vector<Real>>, tokens() returns std::vector<std::vector<Real>>&
   std::vector<std::vector<Real>>& outTokens = _out.tokens();
   if (outTokens.size() < 1) outTokens.resize(1);

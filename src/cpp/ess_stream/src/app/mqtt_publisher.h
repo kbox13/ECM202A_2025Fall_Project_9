@@ -18,12 +18,15 @@
 #include <vector>
 #include <sys/time.h>
 #include <time.h>
-
+#include "ntp_time_client.h"
 // Forward declare MQTT client (Paho MQTT C++)
 namespace mqtt {
   class async_client;
   class connect_options;
 }
+
+// Forward declare MQTTCommandLogger (defined in global namespace)
+class MQTTCommandLogger;
 
 namespace essentia {
 namespace streaming {
@@ -50,6 +53,21 @@ public:
   AlgorithmStatus process();
   void reset();
 
+  /**
+   * Set logger instance for logging commands
+   * @param logger Pointer to MQTTCommandLogger instance (can be nullptr)
+   */
+  void set_logger(::MQTTCommandLogger *logger);
+
+  /**
+   * Set pipeline start time (Unix time when audio processing begins)
+   * This should be called before any commands are published to ensure
+   * accurate audio time to Unix time mapping.
+   * @param unix_sec Unix seconds
+   * @param microseconds Microseconds part
+   */
+  void setStartTime(time_t unix_sec, long microseconds);
+
   static const char* name;
   static const char* category;
   static const char* description;
@@ -75,6 +93,9 @@ private:
   long _startMicroseconds;
   Real _startTimeSec;
   bool _timeInitialized;
+
+  // Command logger (optional, set via set_logger)
+  ::MQTTCommandLogger *_commandLogger;
 
   // Helper methods
   void initializeMQTT();

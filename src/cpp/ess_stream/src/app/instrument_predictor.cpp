@@ -131,26 +131,25 @@ AlgorithmStatus InstrumentPredictor::process() {
   // Compute frame time
   _frameTimeSec = static_cast<Real>(_frameCount) * static_cast<Real>(_hopSize) / _sampleRate;
   Real dt = static_cast<Real>(_hopSize) / _sampleRate;
-  
-  bool anyHit = false;
-  
+  // Track which instruments received hits in this frame
+  std::vector<int> instrumentsWithHits;
+
   // Update each instrument state
   for (int i = 0; i < NUM_INSTRUMENTS; ++i) {
     bool hit = (gates[i] >= 0.5);
-    if (hit) anyHit = true;
-    
+
     // Always run predict step
     kalmanPredict(i, dt);
     
     // Update on hits
     if (hit) {
       updateInstrumentState(i, true, _frameTimeSec);
+      instrumentsWithHits.push_back(i);
     }
   }
-  
-  // Check periodic emission or emit on hits
-  Real elapsedSinceLastEmit = _frameTimeSec - _lastEmissionTime;
-  bool shouldEmit = anyHit || (elapsedSinceLastEmit >= _periodicIntervalSec);
+
+  // Only emit predictions when there are actual hits (no periodic emissions)
+  bool shouldEmit = !instrumentsWithHits.empty();
 
   // Handle prediction output - emit empty PredictionOutput if no predictions this frame
   std::vector<PredictionOutput> &predictionTokens = _predictionOut.tokens();
@@ -158,8 +157,7 @@ AlgorithmStatus InstrumentPredictor::process() {
     predictionTokens.resize(1);
 
   if (shouldEmit) {
-    generatePredictions(_frameTimeSec, shouldEmit);
-    _lastEmissionTime = _frameTimeSec;
+    generatePredictions(_frameTimeSec, instrumentsWithHits);
     // Emit the prediction output to the output
     predictionTokens[0] = _lastPredictionOutput;
   }
@@ -353,12 +351,18 @@ Real InstrumentPredictor::wrapPhaseResidual(Real residual) {
   return residual;
 }
 
-void InstrumentPredictor::generatePredictions(Real currentTime, bool forceEmit)
+void InstrumentPredictor::generatePredictions(Real currentTime, const std::vector<int> &instrumentsWithHits)
 {
+  // Initialize predictions for all instruments with empty vectors
   std::vector<std::vector<PredictionHit>> allPredictions(NUM_INSTRUMENTS);
-  
-  for (int i = 0; i < NUM_INSTRUMENTS; ++i) {
-    allPredictions[i] = predictForInstrument(i, currentTime);
+
+  // Only predict for instruments that received hits in this frame
+  for (int idx : instrumentsWithHits)
+  {
+    if (idx >= 0 && idx < NUM_INSTRUMENTS)
+    {
+      allPredictions[idx] = predictForInstrument(idx, currentTime);
+    }
   }
 
   // Build PredictionOutput struct
