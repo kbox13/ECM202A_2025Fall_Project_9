@@ -51,22 +51,22 @@ set(ESSENTIA_INCLUDE_DIRS "${ESSENTIA_ROOT}/include")
 set(ESSENTIA_LIBRARIES "${ESSENTIA_ROOT}/lib/libessentia.dylib")
 
 add_executable(ess_stream
-  src/app/streaming_pipe.cpp
-  src/app/sumrange.cpp
-  src/app/hit_gate_quantile.cpp
-  src/app/hit_gate_multiframe.cpp
-  src/app/hit_gate_onset.cpp
-  src/app/vector_index.cpp
-  src/app/vector_pack5.cpp
-  src/app/instrument_sum.cpp
-  src/app/instrument_predictor.cpp
-  src/app/zeromq_publisher.cpp
-  src/app/hit_prediction_logger.cpp
-  src/app/gate_logger_sink.cpp
-  src/app/lighting_engine.cpp
-  src/app/mqtt_publisher.cpp
-  src/app/mqtt_command_logger.cpp
-  src/app/ntp_time_client.cpp
+  src/streaming_pipe.cpp
+  src/sumrange.cpp
+  src/hit_gate_quantile.cpp
+  src/hit_gate_multiframe.cpp
+  src/hit_gate_onset.cpp
+  src/vector_index.cpp
+  src/vector_pack5.cpp
+  src/instrument_sum.cpp
+  src/instrument_predictor.cpp
+  src/zeromq_publisher.cpp
+  src/hit_prediction_logger.cpp
+  src/gate_logger_sink.cpp
+  src/lighting_engine.cpp
+  src/mqtt_publisher.cpp
+  src/mqtt_command_logger.cpp
+  src/ntp_time_client.cpp
 )
 
 target_include_directories(ess_stream PRIVATE
@@ -101,8 +101,8 @@ message(STATUS "Using Essentia from: ${ESSENTIA_PREFIX}")
 
 # Test executable for Arduino latency and time sync testing
 add_executable(test_arduino_latency_sync
-  src/app/test_arduino_latency_sync.cpp
-  src/app/ntp_time_client.cpp
+  src/test_arduino_latency_sync.cpp
+  src/ntp_time_client.cpp
 )
 
 target_include_directories(test_arduino_latency_sync PRIVATE

@@ -62,3 +62,6 @@ dmypy.json
 data/
 *.log
 *.tmp
+docs/ignored/
+logs/
+scripts/

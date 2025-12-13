@@ -191,6 +191,7 @@ public:
         timeOffsets.clear();
         networkDelays.clear();
         pendingRequests.clear();
+        int validResponseCount = 0;
 
         for (int i = 0; i < numSamples; ++i) {
             // Get host time from NTP (preferred) or system time
@@ -304,11 +305,16 @@ public:
                     // Include only if delay < 20ms (indicates network problems)
                     if (delayMs < 20.0) {
                         timeOffsets.push_back(offsetMs);
-                        continue;
+                        networkDelays.push_back(delayMs);
                     }
-                    
-                    // Valid measurement
-                    networkDelays.push_back(delayMs);
+                    else
+                    {
+                        // Valid measurement with higher delay
+                        networkDelays.push_back(delayMs);
+                    }
+
+                    // Mark as received and increment counter
+                    validResponseCount++;
                     receivedResponses.erase(i);
                     received = true;
                 } else {
@@ -324,7 +330,7 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
 
-        std::cout << "Time sync test complete. Received " << timeOffsets.size() << " valid responses." << std::endl;
+        std::cout << "Time sync test complete. Received " << validResponseCount << " valid responses." << std::endl;
         if (timeOffsets.empty()) {
             std::cerr << "WARNING: No valid time sync measurements! Arduino may not be time-synced." << std::endl;
             std::cerr << "         Check Arduino serial output for NTP sync status." << std::endl;
