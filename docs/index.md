@@ -667,31 +667,3 @@ All software libraries, frameworks, and tools used in this project are comprehen
 
 For complete citations, version information, and links, please refer to [Section 6: References](#6-references). All Python dependencies with version specifications are listed in [`requirements.txt`](../requirements.txt).
 
----
-
-> [!NOTE] 
-> Read and then delete the material from this line onwards.
-
-# 🧭 **Guidelines for a Strong Project Website**
-
-- Include multiple clear, labeled figures in every major section.  
-- Keep the writing accessible; explain acronyms and algorithms.  
-- Use structured subsections for clarity.  
-- Link to code or datasets whenever possible.  
-- Ensure reproducibility by describing parameters, versions, and preprocessing.  
-- Maintain visual consistency across the site.
-
----
-
-# 📊 **Minimum vs. Excellent Rubric**
-
-| **Component**        | **Minimum (B/C-level)**                                         | **Excellent (A-level)**                                                                 |
-|----------------------|---------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| **Introduction**     | Vague motivation; little structure                             | Clear motivation; structured subsections; strong narrative                                |
-| **Related Work**     | 1–2 citations; shallow summary                                 | 5–12 citations; synthesized comparison; clear gap identification                          |
-| **Technical Approach** | Text-only; unclear pipeline                                  | Architecture diagram, visuals, pseudocode, design rationale                               |
-| **Evaluation**       | Small or unclear results; few figures                          | Multiple well-labeled plots, baselines, ablations, and analysis                           |
-| **Discussion**       | Repeats results; little insight                                | Insightful synthesis; limitations; future directions                                      |
-| **Figures**          | Few or low-quality visuals                                     | High-quality diagrams, plots, qualitative examples, consistent style                      |
-| **Website Presentation** | Minimal formatting; rough writing                           | Clean layout, good formatting, polished writing, hyperlinks, readable organization        |
-| **Reproducibility**  | Missing dataset/software details                               | Clear dataset description, preprocessing, parameters, software environment, instructions   |
